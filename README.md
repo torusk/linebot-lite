@@ -85,3 +85,37 @@ curl -s http://localhost:11434/api/tags
 - モデル変更: `.env` の `MODEL` を変えてアプリ再起動
 - ログ切替: `.env` の `ENABLE_LOG` を `true/false`（既定はOFF）
 - Ollama 稼働: `ollama serve`（既に起動中なら不要）
+
+## n8n × Docker（練習用・無料）
+
+最短で「ローカルDockerのn8n → ngrokで公開」を試す手順です。クラウド契約は不要です。
+
+1) 起動（Docker必須）
+
+```
+docker compose up -d
+open http://localhost:5678
+```
+
+2) n8nでワークフロー作成
+- Webhook Trigger: Method=POST, Path=`line`
+- （まずは疎通確認用）Respond to Webhookで`{{$json}}`を返す→Activate
+
+3) ローカル動作確認
+
+```
+curl -X POST http://localhost:5678/webhook/line \
+  -H 'Content-Type: application/json' \
+  -d '{"events":[{"message":{"text":"hello"},"replyToken":"dummy"}]}'
+```
+
+4) 外部公開（任意）
+
+```
+ngrok http 5678
+# LINE Webhook URL: https://<ngrokドメイン>/webhook/line
+```
+
+5) LINE連携（本番化する場合）
+- Webhook → HTTP Request(Ollama) → HTTP Request(LINE返信)
+- 署名検証（HMAC-SHA256）は必要に応じてFunctionノードで追加

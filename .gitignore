@@ -37,3 +37,6 @@ build/
 .coverage
 .coverage.*
 coverage.xml
+
+# n8n local state (docker volume)
+n8n/
