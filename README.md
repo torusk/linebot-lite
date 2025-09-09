@@ -119,3 +119,25 @@ ngrok http 5678
 5) LINE連携（本番化する場合）
 - Webhook → HTTP Request(Ollama) → HTTP Request(LINE返信)
 - 署名検証（HMAC-SHA256）は必要に応じてFunctionノードで追加
+
+### すぐ使える完成ワークフロー（インポート）
+
+- ファイル: `workflows/n8n-line-ollama.json`
+- 内容: LINE署名検証 → Ollama呼び出し → LINE返信 → Webhookに200/400で応答
+- 使い方:
+  1. n8n画面右上「Import from File」→ `workflows/n8n-line-ollama.json` を指定
+  2. Webhookノードを開き、`Path`が`line`になっていることを確認（URLは`/webhook/line`）
+  3. 必要な環境変数を`.env`に設定（docker-composeが読み込む）
+     - `LINE_CHANNEL_ACCESS_TOKEN`
+     - `LINE_CHANNEL_SECRET`
+     - `OLLAMA_URL`（例: `http://localhost:11434`）
+     - `MODEL`（例: `qwen2.5:7b`）
+     - `SYSTEM_PROMPT`（任意）
+  4. ワークフローをActivate
+  5. 動作確認: `curl -X POST http://localhost:5678/webhook/line -H 'Content-Type: application/json' -d '{"events":[{"message":{"text":"hello"},"replyToken":"dummy"}]}'`
+  6. 公開する場合: `ngrok http 5678` → LINEのWebhook URLを `https://<ngrok>/webhook/line` に設定
+
+ヒント
+- 署名検証エラー時は`400`で `{ ok:false, error:'invalid signature' }` を返します
+- Webhookノードは「Options → Raw Body = ON」に設定済み（署名検証で使用）
+- LINE返信テキストは2000文字に切り詰めています

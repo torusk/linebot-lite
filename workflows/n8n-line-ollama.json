@@ -1,0 +1,197 @@
+{
+  "name": "LINE → Ollama → LINE Reply",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "line",
+        "responseMode": "lastNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        260,
+        300
+      ],
+      "name": "LINE Webhook"
+    },
+    {
+      "parameters": {
+        "functionCode": "const crypto = require('crypto');\n\nconst secret = $env.LINE_CHANNEL_SECRET;\nif (!secret) {\n  throw new Error('Missing env LINE_CHANNEL_SECRET');\n}\n\nconst headers = $json.headers || {};\nconst signature = headers['x-line-signature'] || headers['X-Line-Signature'];\nif (!signature) {\n  item.json = { ok: false, error: 'Missing X-Line-Signature header' };\n  return [item];\n}\n\n// Raw body は Webhookノードのオプション rawBody=true で出力に含める（キー名はrawBody）\nconst rawBody = $json.rawBody ?? $json.bodyRaw ?? $json.bodyString ?? (typeof $json.body === 'string' ? $json.body : JSON.stringify($json.body));\nif (!rawBody) {\n  throw new Error('Missing raw body for signature validation');\n}\n\nconst digest = crypto.createHmac('sha256', secret).update(rawBody).digest('base64');\nitem.json.isValid = (digest === signature);\nreturn [item];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ],
+      "name": "Verify Signature"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.isValid}}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        790,
+        300
+      ],
+      "name": "Valid?"
+    },
+    {
+      "parameters": {
+        "authentication": "none",
+        "url": "={{ ($env.OLLAMA_URL || 'http://localhost:11434') + '/api/chat' }}",
+        "options": {
+          "timeout": 60000
+        },
+        "jsonParameters": true,
+        "optionsJson": "",
+        "queryParametersJson": "",
+        "headerParametersJson": "{\n  \"Content-Type\": \"application/json\"\n}",
+        "bodyParametersJson": "={\n  \n  \"model\": $env.MODEL || 'qwen2.5:7b',\n  \"stream\": false,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": $env.SYSTEM_PROMPT || 'あなたは中学生に寄り添う優しい家庭教師です。専門用語を避け、やさしい言葉で、短い文で、3文以内で答えてください。例や手順は簡潔に。個人情報は聞かないでください。'\n    },\n    {\n      \"role\": \"user\",\n      \"content\": $json.events && $json.events[0] && $json.events[0].message ? $json.events[0].message.text : ''\n    }\n  ]\n}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1030,
+        180
+      ],
+      "name": "Ollama"
+    },
+    {
+      "parameters": {
+        "authentication": "none",
+        "requestMethod": "POST",
+        "url": "https://api.line.me/v2/bot/message/reply",
+        "jsonParameters": true,
+        "options": {
+          "timeout": 30000
+        },
+        "headerParametersJson": "={\n  \n  \"Authorization\": 'Bearer ' + ($env.LINE_CHANNEL_ACCESS_TOKEN || ''),\n  \"Content-Type\": \"application/json\"\n}",
+        "bodyParametersJson": "={\n  \"replyToken\": $json.events && $json.events[0] ? $json.events[0].replyToken : '',\n  \"messages\": [\n    {\n      \"type\": \"text\",\n      \"text\": ( () => {\n        try {\n          const content = $node['Ollama'].json.message && $node['Ollama'].json.message.content ? $node['Ollama'].json.message.content : '(応答なし)';\n          return String(content).slice(0, 2000);\n        } catch (e) {\n          return '(エラー: 応答の整形に失敗)';\n        }\n      })()\n    }\n  ]\n}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1260,
+        180
+      ],
+      "name": "LINE Reply"
+    },
+    {
+      "parameters": {
+        "responseBody": "={ ok: true }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        180
+      ],
+      "name": "Respond 200"
+    },
+    {
+      "parameters": {
+        "responseBody": "={ ok: false, error: 'invalid signature' }",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        420
+      ],
+      "name": "Respond 400"
+    }
+  ],
+  "connections": {
+    "Verify Signature": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LINE Webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama": {
+      "main": [
+        [
+          {
+            "node": "LINE Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LINE Reply": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "staticData": {},
+  "meta": {
+    "templateCredsSetup": []
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "LINE_Ollama_Reply"
+}
+
